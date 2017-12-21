@@ -56,7 +56,7 @@ class corrAna(object):
         return temp
 
     def timeIndex(self, df, date, split = 2):
-    	'''trim time into 500ms or 250ms and change it into timeseries and set as index'''
+        '''trim time into 500ms or 250ms and change it into timeseries and set as index'''
         lst = list(df.index.values)
         year, month, day = date[:4],date[4:6],date[6:]
         res = []
@@ -117,7 +117,7 @@ class corrAna(object):
         else:
             if self.type == 1:
                 keywd = 'aggravated_return'
-            elif self.type == 0:
+            else:
                 keywd = 'rolling_return'
             align_base = self.get_align_base(df)
             res = pd.DataFrame()
@@ -167,11 +167,11 @@ class corrAna(object):
             return agg_res, rolling_res
 
     def recordSymbol(self, date, symbolLst):
-    	'''record symbol and ticker'''
+        '''record symbol and ticker'''
         self.symbolDict[date] = symbolLst
 
     def sampledata(self, data, period, how = 'first'):
-    	df = data.copy()
+        df = data.copy()
         if how == 'first':
             res = df.resample(period).first()
         if how == 'mean':
@@ -183,7 +183,7 @@ class corrAna(object):
         return res
 
     def shift_align(self, data, target, lag, align_base):
-    	'''first shift data of target colume at lag and then align it to origin dataframe'''
+        '''first shift data of target colume at lag and then align it to origin dataframe'''
         if len(target) == 2:
             target = target
         else:

@@ -34,6 +34,8 @@ class simu(object):
         trainLst = self.corr.generateDayLst()
         testLst = self.corr.generateDayLst(self.test_start, self.test_end)
         train_volu, test_volu = self.get_volu(trainLst), self.get_volu(testLst)
+        train_volu.columns = [col+'_volu' for col in train_volu.columns.values]
+        test_volu.columns = [col + '_volu' for col in test_volu.columns.values]
         return train_volu, test_volu
 
     def get_volu(self, dayLst, filterLst='major', split=2):
