@@ -1,5 +1,4 @@
 #-*- coding:utf-8 -*-
-#need to input script like 'python corr_ana.py '20170910' '20170920' '5s'
 
 import pandas as pd
 import re
@@ -35,7 +34,8 @@ class corrAna(object):
         return dayLst
 
     def loaddata(self, day, split = 2):
-        '''split controls split one sec into how many parts'''
+        '''only load single day
+        split controls split one sec into how many parts'''
         if type(day) == type('a'):
             dir = self.filedir + day + '.dat.gz'
         if type(day) == type(1):
@@ -54,6 +54,49 @@ class corrAna(object):
         flag = map(lambda x: (x in timerange1) or (x in timerange2), temp.index.values)
         temp = temp[flag]
         return temp
+
+    def timeIndex(self, df, date, split = 2):
+    	'''trim time into 500ms or 250ms and change it into timeseries and set as index'''
+        lst = list(df.index.values)
+        year, month, day = date[:4],date[4:6],date[6:]
+        res = []
+        for time in lst:
+            s = re.split(r'[:.]', time)
+            if split == 2:
+                if int(s[-1]) <= 500:
+                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '500'
+                elif int(s[-1]) < 1000:
+                    s[-2] = str(int(s[-2]) + 1)
+                    if int(s[-2]) == 60:
+                        s[-3] = str(int(s[-3]) + 1)
+                        s[-2] = '00'
+                        if int(s[-3]) == 60:
+                            s[-3] = '00'
+                            s[-4] = str(int(s[-4]) + 1)
+                    elif len(s[-2]) == 1:
+                        s[-2] = '0' + s[-2]
+                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '000'
+            elif split == 4:
+                if int(s[-1]) <= 250:
+                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '250'
+                elif int(s[-1]) <= 500:
+                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '500'
+                elif int(s[-1]) <= 750:
+                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '750'
+                elif int(s[-1]) < 1000:
+                    s[-2] = str(int(s[-2]) + 1)
+                    if int(s[-2]) == 60:
+                        s[-3] = str(int(s[-3]) + 1)
+                        s[-2] = '00'
+                        if int(s[-3]) == 60:
+                            s[-3] = '00'
+                            s[-4] = str(int(s[-4]) + 1)
+                    elif len(s[-2]) == 1:
+                        s[-2] = '0' + s[-2]
+                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '000'
+            s = year + '-' + month + '-' + day + ' ' + s
+            res.append(s)
+        df.index = pd.DatetimeIndex(res)
 
     def filterdata(self, df, lst, threshold = 1000):
         '''lst is a list of option that want to keep from raw dataframe'''
@@ -124,6 +167,7 @@ class corrAna(object):
             return agg_res, rolling_res
 
     def recordSymbol(self, date, symbolLst):
+    	'''record symbol and ticker'''
         self.symbolDict[date] = symbolLst
 
     def sampledata(self, data, period, how = 'first'):
@@ -138,8 +182,8 @@ class corrAna(object):
         res.dropna(how = 'all',axis = 0, inplace=True)
         return res
 
-
     def shift_align(self, data, target, lag, align_base):
+    	'''first shift data of target colume at lag and then align it to origin dataframe'''
         if len(target) == 2:
             target = target
         else:
@@ -152,6 +196,7 @@ class corrAna(object):
         return df
 
     def get_align_base(self, df):    #获取用于align的base,来源是初始数据的datetime index
+        '''get index as the align base for later align'''
         align_base = pd.DataFrame([1 for i in range(df.shape[0])],index=df.index)
         align_base['helper'] = align_base.index
         align_base.drop_duplicates(subset='helper', inplace=True)
@@ -169,6 +214,7 @@ class corrAna(object):
         return df
 
     def getsymbol(self, lst, ticker):    #依据前两个symbol得到对应的ticker
+        '''column name according to ticker as column name maybe ru0 or ru1 or ru2 and use this function to find symbol'''
         if '0' == ticker[-1]:
             ticker = ticker[:-1]
         if len(ticker) == 3:
@@ -178,48 +224,6 @@ class corrAna(object):
         for name in lst:
             if ticker == name[:2]:
                 return name
-
-    def timeIndex(self, df, date, split = 2):
-        lst = list(df.index.values)
-        year, month, day = date[:4],date[4:6],date[6:]
-        res = []
-        for time in lst:
-            s = re.split(r'[:.]', time)
-            if split == 2:
-                if int(s[-1]) <= 500:
-                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '500'
-                elif int(s[-1]) < 1000:
-                    s[-2] = str(int(s[-2]) + 1)
-                    if int(s[-2]) == 60:
-                        s[-3] = str(int(s[-3]) + 1)
-                        s[-2] = '00'
-                        if int(s[-3]) == 60:
-                            s[-3] = '00'
-                            s[-4] = str(int(s[-4]) + 1)
-                    elif len(s[-2]) == 1:
-                        s[-2] = '0' + s[-2]
-                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '000'
-            elif split == 4:
-                if int(s[-1]) <= 250:
-                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '250'
-                elif int(s[-1]) <= 500:
-                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '500'
-                elif int(s[-1]) <= 750:
-                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '750'
-                elif int(s[-1]) < 1000:
-                    s[-2] = str(int(s[-2]) + 1)
-                    if int(s[-2]) == 60:
-                        s[-3] = str(int(s[-3]) + 1)
-                        s[-2] = '00'
-                        if int(s[-3]) == 60:
-                            s[-3] = '00'
-                            s[-4] = str(int(s[-4]) + 1)
-                    elif len(s[-2]) == 1:
-                        s[-2] = '0' + s[-2]
-                    s = s[0] + ':' + s[1] + ':' + s[2] + '.' + '000'
-            s = year + '-' + month + '-' + day + ' ' + s
-            res.append(s)
-        df.index = pd.DatetimeIndex(res)
 
     def midPrice(self, df):  # 计算mid_pricr
         flag = (df.ask_price * df.bid_price) != 0
@@ -260,7 +264,7 @@ class corrAna(object):
         self.aggravatedRet(df)
 
     def filterName(self, lst):  # 判断是否为期权
-        '''judge option or not'''
+        '''judge whether option or not'''
         ans = []
         for name in lst:
             if not ('-P-' in name or '-C-' in name or 'SR' in name):
@@ -289,7 +293,6 @@ class corrAna(object):
 
     def filtervolu(self, df, lst, threshold=1000, volu='ask_volume'):
         '''lst is a list of option that want to keep from raw dataframe'''
-
         keywd = volu
         align_base = self.get_align_base(df)
         res = pd.DataFrame()
@@ -334,7 +337,13 @@ class corrAna(object):
                 gc.collect()
         return res
 
-
+    def appointedLst(self, data, lst):
+        tempLst = []
+        for elem in lst:
+            temp = self.getsymbol(data,elem)
+            tempLst.append(temp)
+        appointed = data.loc[:,tempLst]
+        return appointed
 
 def saveFigCsv(return_df, period, output_dir, date, figsize=(30,20), fontsize=10):  #路径仅由output_dir指定，freq、date仅影响文件名
     fig,ax = plt.subplots(figsize = figsize)
@@ -352,6 +361,7 @@ def saveFigCsv(return_df, period, output_dir, date, figsize=(30,20), fontsize=10
         return_df.drop('ind', axis=1, inplace = True)
     return_df.to_csv(dir +date+'_'+period+'_return.csv')
     return_df.corr().to_csv(dir + date + '_' + period + '_corr.csv')
+
 
 
 

@@ -6,6 +6,7 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pylab as plt
 import pandas as pd
 from sklearn.linear_model import RidgeCV, Ridge
+import gc
 
 
 class simu(object):
@@ -28,6 +29,39 @@ class simu(object):
         train = self.corr.concatdata(dayLst=trainLst)
         test = self.corr.concatdata(dayLst=testLst)
         return train, test
+
+    def get_train_test_volu(self):
+        trainLst = self.corr.generateDayLst()
+        testLst = self.corr.generateDayLst(self.test_start, self.test_end)
+        train_volu, test_volu = self.get_volu(trainLst), self.get_volu(testLst)
+        return train_volu, test_volu
+
+    def get_volu(self, dayLst, filterLst='major', split=2):
+        '''load multidays and filter and concat together
+        split means split one second into how many parts, choose from [2,4]'''
+        if len(dayLst) == 1:
+            symbolKey = dayLst[0]
+        else:
+            symbolKey = dayLst[0] + '-' + dayLst[-1]
+        temp = self.corr.loaddata(day=dayLst[0], split=split)
+        if filterLst == 'major':
+            major = self.corr.findMostInType(temp)
+            self.corr.recordSymbol(symbolKey, major)
+            filterLst = major.values()
+        res = self.corr.filtervolu(temp, lst=filterLst)
+        del temp;
+        gc.collect()
+        if len(dayLst) > 1:
+            for day in dayLst[1:]:
+                temp = self.corr.loaddata(day=day, split=split)
+                major = self.corr.findMostInType(temp)
+                filterLst = major.values()
+                self.corr.recordSymbol(symbolKey, major)
+                res0 = self.corr.filtervolu(temp, lst=filterLst)
+                res = pd.concat([res, res0])
+                del temp, res0
+                gc.collect()
+        return res
 
     def shift(self, train, test,lag = None):
         '''have a default lag when initialize but can change lag value by appointed here without initialize again'''
@@ -58,8 +92,15 @@ class simu(object):
         test.fillna(method='ffill', inplace=True)
         return train, test
 
-
-
+    def filterSymbol(self, data, target, abs_or_not = True, threshold = 0.1):
+        '''get symbols that has a corr larger than threshold'''
+        if abs_or_not:
+            use_col = data.corr()[abs(data.corr()[target])>threshold].index.values
+        else:
+            use_col = data.corr()[data.corr()[target]>threshold].index.values
+        use_col = list(use_col)
+        use_col.remove(target)
+        return use_col
 
     def largestsymbol(self, df, k):
         df_symbol = df.corr().nlargest(k, self.target)[self.target].index.values
@@ -77,7 +118,6 @@ class simu(object):
             style = '-'
         else:
             style = '-o'
-
         plt.plot(origin[start:end], style, label='unshifted')
         plt.plot(pred[start:end]*coef, style, label='pred')
         plt.plot([0 if i == 0 else 0 for i in pred[start:end]])
@@ -121,7 +161,3 @@ class simu(object):
         plt.plot(data[var][start:end], style, label=var)
         plt.legend()
         plt.show()
-
-
-
-
