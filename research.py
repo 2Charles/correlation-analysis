@@ -10,7 +10,6 @@ import gc
 
 
 class simu(object):
-
     def __init__(self,train_start, train_end, test_start, test_end, period, lag, target, type = 0, filedir ='/hdd/ctp/day/'):
         self.train_start = train_start
         self.train_end = train_end

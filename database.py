@@ -4,12 +4,11 @@
 # set parameters
 filedir ='/hdd/ctp/day/'
 start_date = '20171101'
-end_date = '20171201'
+end_date = '20171215'
 type = 0     # 1 for aggravated, 0 for rolling
-ticker1 = 'ni0'
-outputdir = u'/home/hui/文档/corr output/'
-lagLst = ['1s','5s','10s','30s','60s']
-periodLst = ['1s','5s','10s','30s','60s']
+ticker1 = 'ru0'
+lagLst = ['1s', '5s', '10s', '30s', '60s']
+periodLst = ['1s', '5s', '10s', '30s', '60s']
 
 # typelst = ['noble', 'nonferrous', 'black', 'farm', 'chemical', 'futures', 'loan']
 
@@ -22,7 +21,6 @@ import os
 import gc
 import corrlab
 import MySQLdb
-
 
 def createTable():
     conn = MySQLdb.connect(host = 'localhost',user='root',passwd='hhui123456')
@@ -67,7 +65,6 @@ def calc_target(start_date, end_date, type, ticker1,lagLst = lagLst, periodLst =
                 res = pd.concat([res,temp_corr[ticker1]])
                 res.rename(columns = {0:day},inplace=True)
                 res.fillna(-2,inplace=True)
-                print 'lag is : %s, period is %s' %(lag, period)
                 for ticker2 in temp_corr.index.values:
                     corr_value = res[day][ticker2]
                     ticker2 = ticker2.split('_')[0]
@@ -104,23 +101,23 @@ def calc_target_week(start_date, end_date, type, ticker1, lagLst=lagLst, periodL
         print 'processing ', lst[0] + '-'+lst[-1]
         data = corr.concatdata(lst)
         symbol1 = corr.symbolDict[lst[0] + '-'+lst[-1]][ticker1[:2]]
-        for lag in ['1s','5s','10s','30s','60s']:
-            for period in ['1s','5s','10s','30s','60s']:
+        for lag in lagLst:
+            for period in periodLst:
                 res = pd.DataFrame()
                 temp = data.copy()
                 shifted = temp[ticker1].shift(-int(lag[:-1]), 's')
                 align_base = corr.get_align_base(data)
                 _, align_shifted = align_base.align(shifted, join='left', axis=0)
                 temp[ticker1] = align_shifted.values
-                temp = corr.sampledata(temp, period=type)
+                temp = corr.sampledata(temp, period=period)
                 temp.fillna(method='ffill', inplace=True)
                 temp.fillna(method='bfill', inplace=True)
                 temp_corr = temp.corr().sort_index()
                 res = pd.concat([res, temp_corr[ticker1]])
                 res.rename(columns={0: lst[0] + '-' + lst[-1]}, inplace=True)
                 res.fillna(-2, inplace=True)
-                for symbol in res.index.values:
-                    corr_value = res[(lst[0] + '-' + lst[-1])][symbol]
+                for ticker2 in temp_corr.index.values:
+                    corr_value = res[(lst[0] + '-' + lst[-1])][ticker2]
                     ticker2 = ticker2.split('_')[0]
                     symbol2 = corr.symbolDict[lst[0] + '-' + lst[-1]][ticker2[:2]]
                     cursor.execute("""INSERT INTO tb_corr(
@@ -137,14 +134,12 @@ def calc_target_week(start_date, end_date, type, ticker1, lagLst=lagLst, periodL
                                                     VALUES (
                                                     '%s', '%s','%s','%s','%s','%s','%d','%d','%d','%.6f'
                                                     )
-                                                    """ % (
-                    lst[0], lst[-1], ticker1, symbol1, ticker2, symbol2, type, int(period[:-1]), int(lag[:-1]), corr_value))
+                                                    """ % (lst[0], lst[-1], ticker1, symbol1, ticker2, symbol2, type, int(period[:-1]), int(lag[:-1]), corr_value))
                     conn.commit()
         # del data, target, res; gc.collect()
 
-
 createTable()
-calc_target(start_date, end_date, type, ticker1)
+# calc_target(start_date, end_date, type, ticker1)
 calc_target_week(start_date, end_date, type, ticker1)
 
 
