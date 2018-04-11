@@ -27,7 +27,7 @@ class automation(object):
         end_date DATE not null,
         ticker1 varchar(32) not null,
         ticker2 varchar(32) not null,
-        type SMALLINT not null DEFAULT 0, 
+        type SMALLINT not null DEFAULT 0,
         period INT not null,
         lag INT not null,
         corr DOUBLE,
@@ -117,16 +117,25 @@ class automation(object):
         self.calculated.append(file)
         print 'done'
 
-    def calculate_5days(self):
+    def calculate_k_days(self, k=5):  # 通过从本地读取对应日期的return数据来计算5天内的corr
         '''calculate 5 working days from today'''
         cal_range = []
-        date_rng = pd.date_range(end=pd.datetime.now(), periods=5, freq='B')
+        date_rng = pd.date_range(end=pd.datetime.now(), periods=k, freq='B')
         for day in date_rng:
             tmp = (str(day).split(' ')[0]).split('-')
-            day = tmp[0]+tmp[1]+tmp[2]
-            if self.filter_by_size(day+'.dat.gz'):
+            day = tmp[0] + tmp[1] + tmp[2]
+            if self.filter_by_size(day + '.dat.gz'):
                 cal_range.append(day)
+        common_ticker = self.get_k_days_common_ticker(cal_range)
         for type in [0, 1]:
+            if type == 0:
+                keywd = 'rolling_return'
+            else:
+                keywd = 'aggravated_return'
+            for day in cal_range:
+                for ticker in common_ticker:
+                    data_dir = '/media/sf_ubuntu_share/saved-when-calculating/return/' + ticker + '/' + day + '/' + keywd + '/'  # 待补充  默认是用新的数据存储格式，即../price/date/ticker/period_0s.csv
+
             corr = data_process.pre_process(filedir=self.dir, type=type)
             raw_data = corr.loaddata(cal_range[0])  # 由于实际时间跨度为7天，但用来求主力合约或次主力合约的数据只取了一天，所以如果主力合约变化的时候会对不上
             for level in [0, 1]:  # to get self.level updated
@@ -153,7 +162,7 @@ class automation(object):
                                     self.cursor.execute(
                                         """REPLACE INTO final_corr(start_date,end_date,ticker1,symbol1,ticker2,symbol2,type,period,lag,corr)VALUES ('%s','%s','%s','%s','%s','%s','%d','%d','%d','%.8f')""" % (
                                             cal_range[0], cal_range[-1], target, symbol1, ticker2, symbol2, type,
-                                        int(period[:-1]), int(lag[:-1]), corr_value))
+                                            int(period[:-1]), int(lag[:-1]), corr_value))
                                     self.conn.commit()
         print 'done'
 
@@ -314,34 +323,31 @@ class automation(object):
         values('%s','%s','%s','%s')''' %(start_date, end_date, ticker, symbol))
         self.conn.commit()
 
-
-auto = automation(dir='/hdd/ctp/day/')
-auto.get_calculated()
-auto.get_uncalculated()
-print auto.uncalculated
-try:
-    auto.calculate_today()
-except:
-    print 'No data of today now.'
-auto.calculate_history()
-
-def main():
-    if __name__ == '__main__':
-        auto = automation(dir='/hdd/ctp/day/')
-        auto.get_calculated()
-        auto.get_uncalculated()
-        print auto.uncalculated
-        try:
-            auto.calculate_today()
-        except:
-            print 'No data of today now.'
-        auto.calculate_history()
-        main()
+    def get_k_days_common_ticker(self, daylst): #获取k天范围内的共同ticker，读取它们然后concat用于求k天的corr
+        common_ticker = set()
+        for i in len(daylst):
+            this_day = []
+            day = daylst[i]
+            if isinstance(day, int):
+                day = str(day)
+            self.cursor.execute('select ticker from ticker_symbol where start_date = ' + day )
+            ans = self.cursor.fetchall()
+            for row in ans:
+                this_day.append(row[0])
+            if i == 0: # 第一天，并集，后面用交集
+                common_ticker = set(this_day)
+            else:
+                common_ticker = common_ticker&set(this_day)
+        return list(common_ticker)
 
 
-# auto.calculate_certain('20180403')
-# auto.history_7_days()
-#
-# auto =automation(dir = '/hdd/ctp/day/')
-# auto.calculate_today()    # calculate every day data
-# auto.calculate_5days()
+if __name__ == '__main__':
+    auto = automation(dir='/hdd/ctp/day/')
+    auto.get_calculated()
+    auto.get_uncalculated()
+    print auto.uncalculated
+    try:
+        auto.calculate_today()
+    except:
+        print 'No data of today now.'
+    auto.calculate_history()
