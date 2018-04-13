@@ -189,9 +189,14 @@ class Trade(Research):
         mid_price = (ask_price + bid_price) / 2
         pred_values = mid_price * pred_return
         asset = []
-        fee_tup = self.fee_and_type_check()
-        fee_type = fee_tup[0]
-        fee = fee_tup[-1]
+        try:
+            fee_tup = self.fee_and_type_check()
+            fee_type = fee_tup[0]
+            fee = fee_tup[-1]
+        except:
+            print 'wrong to get fee type from database'
+            fee_type = raw_input('enter fee type, per or fixed')
+            fee = float(raw_input('enter your fee value'))
         for i in range(len(pred_values)):
             if pred_values[i] >= buy_threshold and hold < max_hold:
                 to_add = min(hold_per_trade, max_hold-hold)
@@ -219,9 +224,14 @@ class Trade(Research):
         mid_price = (ask_price + bid_price) / 2
         pred_values = mid_price * pred_return
         asset = []
-        fee_tup = self.fee_and_type_check()
-        fee_type = fee_tup[0]
-        fee = fee_tup[-1]
+        try:
+            fee_tup = self.fee_and_type_check()
+            fee_type = fee_tup[0]
+            fee = fee_tup[-1]
+        except:
+            print 'wrong to get fee type from database'
+            fee_type = raw_input('enter fee type, per or fixed')
+            fee = float(raw_input('enter your fee value'))
         for i in range(len(pred_values)):
             if pred_values[i] >= buy_threshold and hold < max_hold:
                 to_add = min(hold_per_trade, max_hold-hold)
@@ -241,22 +251,6 @@ class Trade(Research):
                 asset.append(hold * mid_price[i] + money)
         return asset
 
-    def find_best_pair(self, buy_thres_lst, sell_thres_lst, fig_save=True, model_name='ridge'):
-        to_save_dir = '/media/charles/charles_13162398828/hdd/output/trade_asset/' + model_name + '/'
-        if not os.path.exists(to_save_dir):
-            os.makedirs(to_save_dir)
-        record = {}
-        for buy_thres in np.arange(1, 3, 0.1):
-            for sell_thres in np.arange(-1, -2, -0.1):
-                pair = str(buy_thres) + '_' + str(sell_thres)
-                asset = self.simu_trade1(price_df, train_predict, buy_threshold=buy_thres, sell_threshold=sell_thres
-                                          , hold_per_trade=5)
-                record[pair] = (max(asset), min(asset))
-        if fig_save:
-            plt.figure(figsize= (12,8))
-            plt.plot(asset)
-            plt.savefig(to_save_dir+pair+'.jpg')
-            plt.close()
 
 
 

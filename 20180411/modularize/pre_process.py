@@ -14,7 +14,7 @@ class pre_process(object):
     0 for rolling, 1 for aggravated;
     level : 0 for major option, 1 for secondary, 2 for third '''
 
-    def __init__(self, filedir, type=0, split=2, save=True, out_dir='/media/sf_ubuntu_share/saved-when-calculating/trial/', level=0):
+    def __init__(self, filedir='/hdd/ctp/day/', type=0, split=2, save=True, out_dir='/media/sf_ubuntu_share/saved-when-calculating/trial/', level=0):
         self.filedir = filedir
         self.type = type
         self.symbolDict = {}
@@ -63,41 +63,41 @@ class pre_process(object):
         temp = temp[flag]
         return temp
 
-    def load_multi_days(self, dayLst, period, data_dic):    #读取多日数据，并存入到一个字典中，以对应日期为key
-        '''load multi days raw_data and store in a dictionary, with date as key'''
-        dic = {}
-        for day in dayLst:
-            tmp = self.loaddata(day)
-            data_dic = self.trim_merge(tmp)
-            calculated_dic = self.calc_all_ticker(data_dic, period)
-            dic[day] = self.merge_return(calculated_dic)
-        return dic
+    # def load_multi_days(self, dayLst, period):    #读取多日数据，并存入到一个字典中，以对应日期为key
+    #     '''load multi days raw_data and store in a dictionary, with date as key'''
+    #     dic = {}
+    #     for day in dayLst:
+    #         tmp = self.loaddata(day)
+    #         data_dic = self.trim_merge(tmp)
+    #         calculated_dic = self.calc_all_ticker(data_dic, period)
+    #         dic[day] = self.merge_return(calculated_dic)
+    #     return dic
 
-    def findMostInType(self, df, level = 0):  #寻找主力合约 选取第二、第三通过每选出一次就把那一些从列表里去掉
+    def findMostInType(self, df):  #寻找主力合约 选取第二、第三通过每选出一次就把那一些从列表里去掉
         dic = df.groupby('ticker')['turnover'].max()
         lst = dic.index.values
         lst = self.filterName(lst)
-        for time in range(level+1):
+        for time in range(self.level+1):
             existed = []
             length = {}
-            most = {}
+            major_dic = {}
             for name in lst:
                 l = dic[name]
                 if name[:2] in existed:
                     if l > length[name[:2]]:
-                        most[name[:2]] = name
+                        major_dic[name[:2]] = name
                         length[name[:2]] = l
                 else:
                     existed.append(name[:2])
                     length[name[:2]] = l
-                    most[name[:2]] = name
+                    major_dic[name[:2]] = name
             for times in range(len(lst)):
                 for elem in lst:
-                    if elem in most.values():
+                    if elem in major_dic.values():
                         lst.remove(elem)
-        return most
+        return major_dic
 
-    def trim_merge(self, raw_data, size_thres=1000): # 选出每个主力合约，然后时间规整、时间对齐，计算retu
+    def trim_merge(self, raw_data, size_thres=1000): # 选出每个主力合约，然后时间规整、时间对齐
         major = self.findMostInType(raw_data)
         major_future = major.values()
         date = str(raw_data.index.values[0]).split('T')[0]
@@ -109,7 +109,6 @@ class pre_process(object):
         for ticker in major_future:
             tmp = raw_data[raw_data['ticker'] == ticker]
             if tmp.shape[0] < size_thres:
-                # print ticker
                 continue
             else:
                 tmp = self.align_drop(tmp, align_base)
@@ -133,7 +132,43 @@ class pre_process(object):
                 tmp.to_csv(self.out_dir+'/price/'+date+'/'+ticker[:2] + str(self.level)+'/period_'+period+'.csv')
         return calculated_dic
 
-    def merge_return(self,calculated_dic):
+
+    # def resample(self, data, resample_period, method='first'):
+    #     '''data should be a time indexed dataframe and method'''
+    #     if 'ms' in resample_period:
+    #         val = int(resample_period[:-2])
+    #         if val * self.split <= 1000:
+    #             pass  # 表明resample period比初始的时间间隔还小
+    #         else:
+    #             gap = int(val * self.split * 1.0 / 1000)   # 几个点中取一个
+    #             if gap > 1:
+    #                 if method == 'first':
+    #                     bool_list = [True]
+    #                     for i in range(1, gap):
+    #                         bool_list.append(False)
+    #                 if method == 'last':
+    #                     bool_list = []
+    #                     for i in range(1, gap-1):
+    #                         bool_list.append(False)
+    #                     bool_list.append(True)
+    #                 else:   # 对于resample period以ms为单位
+    #                     bool_list = [True]
+    #                     for i in range(1, gap):
+    #                         bool_list.append(False)
+    #                 size = data.shape[0]
+    #                 keep_flag = []
+    #                 for i in range(int(size/gap)):   # 利用int对size/gap向下取整，可能导致len(keep_flag) <size
+    #                         keep_flag.extend(bool_list)
+    #                 flag_size = len(keep_flag)
+    #                 if flag_size < size:
+    #                     d = size - flag_size
+    #                     for i in range(d):
+    #                         keep_flag.append(True)
+    #         return data[keep_flag]
+    #     else:
+    #         return data.resample(freq=resample_period, how=method)
+
+    def merge_return(self, calculated_dic):
         major_future = calculated_dic.keys()
         res = pd.DataFrame()
         if self.type == 0:
@@ -147,69 +182,15 @@ class pre_process(object):
         res.index = index
         return res
 
+    def period_resample_combine(self, data_dic,periodlst, resample_periodlst, how='first'):
+        for period in periodlst:
+            calculated_dic = self.calc_all_ticker(data_dic, period)
+            res = self.merge_return(calculated_dic)
+            if not os.path.exists(self.out_dir+)
+            for resample_period in resample_periodlst:
 
 
 
-
-    # def filterdata(self, df, lst, period='500ms', level=0, threshold=1000):  # 有可能在初始数据中缺少某些时刻的记录，考虑认为地生成一个09:00 到15:30的df
-    #     '''lst is a list of option that want to keep from raw dataframe'''
-    #     if self.type == 1:
-    #         keywd = 'aggravated_return'
-    #     else:
-    #         keywd = 'rolling_return'
-    #     align_base = self.get_align_base(df)
-    #     date = str(df.index.values[0]).split('T')[0]
-    #     date = (date.split('-'))[0]+(date.split('-'))[1]+(date.split('-'))[2]
-    #     res = pd.DataFrame()
-    #     for name in lst:
-    #         temp = df[df['ticker'] == name]
-    #         if temp.shape[0] < threshold:
-    #             continue
-    #         else:
-    #             temp = self.calcAll(temp, period=period)
-    #             if self.save:
-    #                 sae_cols = ['ticker', 'bid_price', 'ask_price', 'mid_price', 'rolling_return', 'aggravated_return']
-    #                 to_save = temp[same_cols]
-    #                 to_save = self.align_drop(data=to_save, base=align_base)
-    #                 if not os.path.exists(self.out_dir+'/price/'+date+'/'+name[:2] + str(level)+'/'):
-    #                     os.makedirs(self.out_dir+'/price/'+date+'/'+name[:2] + str(level)+'/')
-    #                 to_save = self.align_drop(data=to_save, base=align_base)
-    #                 to_save.fillna(method='ffill', axis=0, inplace=True)
-    #                 to_save.fillna(method='bfill', axis=0, inplace=True)
-    #                 to_save.to_csv(self.out_dir+'/price/'+date+'/'+name[:2] + str(level)+'/period_'+period+'.csv')
-
-    #             temp = temp.rename(columns={keywd: name[:2]+str(level)})
-    #             temp = pd.DataFrame(temp.loc[:, name[:2]+str(level)])
-    #             temp = self.align_drop(data=temp, base=align_base)
-    #             res = pd.concat([res, temp], axis=1)
-    #     res.fillna(method='ffill', axis=0, inplace=True)
-    #     res.fillna(method='bfill', axis=0, inplace=True)
-    #     return res
-
-    # def concatdata(self, data_dict, period='500ms', level=0, filterLst='major'):
-    #     '''load multidays and filter and concat together'''
-    #     dayLst = data_dict.keys()
-    #     if len(dayLst) == 1:
-    #         symbolKey = dayLst[0]
-    #     else:
-    #         symbolKey = dayLst[0]+'-'+dayLst[-1]
-    #     temp = data_dict[dayLst[0]]
-    #     if filterLst == 'major':
-    #         major = self.findMostInType(temp)
-    #         self.recordSymbol(symbolKey, major, level=level)
-    #         filterLst = major.values()
-    #     res = self.filterdata(temp, lst=filterLst, period=period, level=level)
-    #     del temp; gc.collect()
-    #     if len(dayLst) > 1:
-    #         for day in dayLst[1:]:
-    #             temp = data_dict[day]
-    #             major = self.findMostInType(temp)
-    #             filterLst = major.values()
-    #             self.recordSymbol(symbolKey, major, level = level)
-    #             res0 = self.filterdata(temp, lst=filterLst, level = level)
-    #             res = pd.concat([res, res0])
-    #             del temp, res0; gc.collect()
-    #     return res
 
     def timeIndex(self, df, date):
         '''trim time into 500ms or 250ms and change it into timeseries and set as index'''
@@ -350,45 +331,3 @@ class pre_process(object):
             if not ('-P-' in name or '-C-' in name or 'SR' in name):
                 ans.append(name)
         return ans
-
-    def findMostInType(self, df, level = 0):  #寻找主力合约 选取第二、第三通过每选出一次就把那一些从列表里去掉
-        dic = df.groupby('ticker')['turnover'].max()
-        lst = dic.index.values
-        lst = self.filterName(lst)
-        for time in range(level+1):
-            existed = []
-            length = {}
-            most = {}
-            for name in lst:
-                l = dic[name]
-                if name[:2] in existed:
-                    if l > length[name[:2]]:
-                        most[name[:2]] = name
-                        length[name[:2]] = l
-                else:
-                    existed.append(name[:2])
-                    length[name[:2]] = l
-                    most[name[:2]] = name
-            for times in range(len(lst)):
-                for elem in lst:
-                    if elem in most.values():
-                        lst.remove(elem)
-        return most
-
-# pre =pre_process(filedir='/media/charles/charles_13162398828/hdd/ctp/day/',type = 0, split=2)
-# daylst = pre.generateDayLst(20180206, 20180319)
-# print daylst
-# data_lst = pre.load_multi_days(daylst)
-# print data_lst['20180315'].shape
-# for day in daylst:
-#     print 'processing day: ', day
-#     try:
-#         raw_data = data_lst[day]
-#         for level in [0]:  # to get self.level updated
-#             major = pre.findMostInType(raw_data, level=0)
-#             for period in ['0s', '1s', '5s']:
-#                 data = pre.filterdata(raw_data,lst= major.values(),period=period)
-#     except:
-#         print 'wrong with day: ', day
-#
-# # res = pre.concatdata(data_lst, period='5s')
