@@ -97,7 +97,7 @@ class pre_process(object):
                         lst.remove(elem)
         return major_dic
 
-    def trim_merge(self, raw_data, size_thres=1000): # 选出每个主力合约，然后时间规整、时间对齐
+    def trim_merge(self, raw_data, size_thres=1000): # 选出每个主力合约，然后时间规整、时间对齐,return a dic with target ticker as key
         major = self.findMostInType(raw_data)
         major_future = major.values()
         date = str(raw_data.index.values[0]).split('T')[0]
@@ -117,77 +117,74 @@ class pre_process(object):
                 data_dic[ticker] = tmp
         return data_dic
 
-    def calc_all_ticker(self, data_dic, period, save_col=['ticker', 'bid_price', 'ask_price', 'mid_price', 'rolling_return', 'aggravated_return']):
+    def calc_all_ticker(self, data_dic, period, resample_period, method='first', save_col=['ticker', 'bid_price', 'ask_price', 'mid_price', 'rolling_return', 'aggravated_return']):
         major_future = data_dic.keys()
         calculated_dic = {}
         date = str(data_dic[major_future[0]].index.values[0]).split('T')[0]
         date = (date.split('-'))[0]+(date.split('-'))[1]+(date.split('-'))[2]
+        calculated_dic['no_resample'] = {}
         for ticker in major_future:
             tmp = self.calcAll(data_dic[ticker], period)
             tmp = tmp[save_col]
-            calculated_dic[ticker] = tmp
+            calculated_dic['no_resample'][ticker] = tmp
+            if 'ms' in resample_period and int(resample_period[:-2]) <= 1000/ self.split: # this means no need to resample as resample period is less than time gap
+                pass
+            else:
+                if resample_period not in calculated_dic.keys():
+                    calculated_dic[resample_period] = {}
+                if 'ms' in resample_period:
+                    sampled = tmp.resample(-int(resample_period[:-2]), 'ms', method)
+                else:
+                    sampled = tmp.resample(-int(resample_period[:-1]), resample_period[-1], method)
+                calculated_dic[resample_period][ticker] = sampled
+                if self.save:
+                    if not os.path.exists(self.out_dir+'/resampled_price/'+date+'/'+ticker[:2]+str(self.level)+'/'):
+                        os.makedirs(self.out_dir+'/resampled_price/'+date+'/'+ticker[:2]+str(self.level)+'/')
+                    sampled.to_cs(self.out_dir+'/resampled_price/'+date+'/'+ticker[:2]+str(self.level)+'/'+'period_'+period+'_sample_'+resample_period+'.dat.gz', compression='gzip')
             if self.save:  # save price and return
                 if not os.path.exists(self.out_dir+'/price/'+date+'/'+ticker[:2] + str(self.level)+'/'):
                         os.makedirs(self.out_dir+'/price/'+date+'/'+ticker[:2] + str(self.level)+'/')
-                tmp.to_csv(self.out_dir+'/price/'+date+'/'+ticker[:2] + str(self.level)+'/period_'+period+'.csv')
+                tmp.to_csv(self.out_dir+'/price/'+date+'/'+ticker[:2] + str(self.level)+'/period_'+period+'.dat.gz', compression='gzip')
         return calculated_dic
 
 
-    # def resample(self, data, resample_period, method='first'):
-    #     '''data should be a time indexed dataframe and method'''
-    #     if 'ms' in resample_period:
-    #         val = int(resample_period[:-2])
-    #         if val * self.split <= 1000:
-    #             pass  # 表明resample period比初始的时间间隔还小
-    #         else:
-    #             gap = int(val * self.split * 1.0 / 1000)   # 几个点中取一个
-    #             if gap > 1:
-    #                 if method == 'first':
-    #                     bool_list = [True]
-    #                     for i in range(1, gap):
-    #                         bool_list.append(False)
-    #                 if method == 'last':
-    #                     bool_list = []
-    #                     for i in range(1, gap-1):
-    #                         bool_list.append(False)
-    #                     bool_list.append(True)
-    #                 else:   # 对于resample period以ms为单位
-    #                     bool_list = [True]
-    #                     for i in range(1, gap):
-    #                         bool_list.append(False)
-    #                 size = data.shape[0]
-    #                 keep_flag = []
-    #                 for i in range(int(size/gap)):   # 利用int对size/gap向下取整，可能导致len(keep_flag) <size
-    #                         keep_flag.extend(bool_list)
-    #                 flag_size = len(keep_flag)
-    #                 if flag_size < size:
-    #                     d = size - flag_size
-    #                     for i in range(d):
-    #                         keep_flag.append(True)
-    #         return data[keep_flag]
-    #     else:
-    #         return data.resample(freq=resample_period, how=method)
-
     def merge_return(self, calculated_dic):
-        major_future = calculated_dic.keys()
-        res = pd.DataFrame()
+        major_future = calculated_dic['no_resample'].keys()
+        res_dic = {}
+        for key in calculated_dic.keys():
+            res_dic[key] = {}
         if self.type == 0:
             keywd = 'rolling_return'
         else:
             keywd = 'aggravated_return'
         for ticker in major_future:
             symbol = ticker[:2]+str(self.level)
-            res[symbol] = calculated_dic[ticker][keywd].values
-        index = calculated_dic[ticker].index.values
-        res.index = index
+            for key in calculated_dic.keys():
+                res_dic[key][symbol] = calculated_dic[key][ticker][keywd].values
+        for key in calculated_dic.keys():
+            index = calculated_dic[key][major_future[0]].index.values
+            res_dic[key].index = index
+        if self.save:
+            for key in res_dic.keys():
+                tmp = res_dic[key]   # return dataframe
+                if key == 'no_resample':
+                    dir_keywd = 'no_resample'
+                else:
+                    dir_keywd = 'resample_'+key
+                if not os.path.exists(self.out_dir+'/return/'+dir_keywd+'/'):
+                    os.makedirs(self.out_dir+'/return/'+dir_keywd+'/')
+                tmp.to_csv(self.out_dir+'/return/'+dir_keywd+'/')
+            res.to_csv(self.out_dir+'return/'+keywd+'/'+)
         return res
 
     def period_resample_combine(self, data_dic,periodlst, resample_periodlst, how='first'):
         for period in periodlst:
             calculated_dic = self.calc_all_ticker(data_dic, period)
             res = self.merge_return(calculated_dic)
-            if not os.path.exists(self.out_dir+)
+            if not os.path.exists(self.out_dir+):
+                pass
             for resample_period in resample_periodlst:
+                pass
 
 
 
