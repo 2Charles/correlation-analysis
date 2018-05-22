@@ -10,9 +10,9 @@ import gc
 
 class automation(object):
 
-    def __init__(self, dir='/hdd/ctp/day/day/', save=True, split=2, db_name='db_corr',
+    def __init__(self, data_dir='/hdd/ctp/day/day/', save=True, split=2, db_name='db_corr',
                  one_day_corr='one_day_corr', multi_days_corr='multi_days_corr', ticker_symbol='ticker_symbol'):
-        self.dir = dir
+        self.dir = data_dir
         self.save = save
         self.out_dir = '/media/sf_ubuntu_share/corr_output/'
         self.split = split
@@ -24,13 +24,13 @@ class automation(object):
         self.multi_calculated = {}
         self.conn = MySQLdb.connect(host='47.52.224.156', user='hhui', passwd='hhui123456')
         self.cursor = self.conn.cursor()
-        self.db_name=db_name
+        self.db_name = db_name
         self.one_day_corr = one_day_corr
         self.multi_days_corr = multi_days_corr
         self.ticker_symbol_table = ticker_symbol
         self.cursor.execute("""create database if not exists """+self.db_name)
         self.conn.select_db(self.db_name)
-        self.cursor.execute("""create table if not exists """+self.one_day_corr+""" 
+        self.cursor.execute("""create table if not exists """+self.one_day_corr+"""
             (start_date DATE not null,
             end_date DATE not null,
             ticker1 varchar(32) not null,
@@ -42,7 +42,7 @@ class automation(object):
             symbol1 varchar(32),
             symbol2 varchar(32),
             primary key(start_date, end_date, ticker1, ticker2, type, lag, period))""")
-        self.cursor.execute("""create table if not exists """+self.multi_days_corr+""" 
+        self.cursor.execute("""create table if not exists """+self.multi_days_corr+"""
                     (start_date DATE not null,
                     end_date DATE not null,
                     duration INT not null,
@@ -53,7 +53,7 @@ class automation(object):
                     lag INT not null,
                     corr DOUBLE,
                     primary key(start_date, end_date, ticker1, ticker2, type, lag, period))""")
-        self.cursor.execute("""create table if not exists  """+self.ticker_symbol_table+""" 
+        self.cursor.execute("""create table if not exists  """+self.ticker_symbol_table+"""
                             (start_date DATE not null,
                             end_date DATE not null,
                             ticker varchar(32) not null,
@@ -99,7 +99,7 @@ class automation(object):
             if self.filter_by_size(file):
                 date = file.split('.')[0]
                 print 'calculating day:', date
-                corr = pre_process.pre_process(filedir=self.dir, type=0, save=self.save)
+                corr = pre_process.pre_process(filedir=self.dir, type=0, save=self.save)  #这里仅仅是为了实例化并得到raw_data，所以指定type=0，后期有取type为0/1
                 raw_data = corr.loaddata(date)
                 for type in [0, 1]:
                     if type == 0:
@@ -116,10 +116,11 @@ class automation(object):
                     data_dic = corr.trim_merge(raw_data)
                     for period in periodlst:
                         calculated_dic = corr.calc_all_ticker(data_dic, period, resample_periodlst)
-                        return_df = corr.merge_return(calculated_dic, period, keywd=keywd)
+                        return_df, weight_return_df = corr.merge_return(calculated_dic, period, keywd=keywd)
                         del calculated_dic; gc.collect()
-                        corr_df = return_df['no_resample']  # only concern un-resampled data to calculate corr
-                        del return_df
+                        corr_df = return_df['resample_0s']  # only concern un-resampled data to calculate corr
+                        weight_corr_df = weight_return_df['resample_0s']
+                        del return_df, weight_return_df
                         gc.collect()
                         target_lst = corr_df.columns.values
                         for lag in laglst:
@@ -130,28 +131,41 @@ class automation(object):
                             print pd.datetime.now(), 'lag: ', lag, ' period: ', period
                             for target in target_lst:
                                 this_shifted = self.shift(corr_df, target, lag)
+                                weight_this_shifted = self.shift(weight_corr_df, target, lag)
                                 if self.save:
-                                    if not os.path.exists(self.out_dir+'lagged_return/'+date+'/'+keywd+'/'+target+'/'):
-                                        os.makedirs(self.out_dir+'lagged_return/'+date+'/'+keywd+'/'+target+'/')
-                                    this_shifted.to_csv(self.out_dir+'lagged_return/'+date+'/'+keywd+'/'+target+'/'+'period_'+period+'_'+'lag_'+lag+'_no_resample.dat.gz', compression='gzip')
+                                    if not os.path.exists(self.out_dir+'lagged_return/mid/'+date+'/'+keywd+'/'+target+'/'):
+                                        os.makedirs(self.out_dir+'lagged_return/mid/'+date+'/'+keywd+'/'+target+'/')
+                                    this_shifted.to_csv(self.out_dir+'lagged_return/mid/'+date+'/'+keywd+'/'+target+'/'+'period_'+period+'_'+'lag_'+lag+'_no_resample.dat.gz', compression='gzip')
+                                    if not os.path.exists(self.out_dir+'lagged_return/weight/'+date+'/'+keywd+'/'+target+'/'):
+                                        os.makedirs(self.out_dir+'lagged_return/weight/'+date+'/'+keywd+'/'+target+'/')
+                                    weight_this_shifted.to_csv(self.out_dir+'lagged_return/weight/'+date+'/'+keywd+'/'+target+'/'+'period_'+period+'_'+'lag_'+lag+'_no_resample.dat.gz', compression='gzip')
                                     for resample_period in resample_periodlst:
                                         resampled = this_shifted.resample(resample_period).first()
-                                        resampled.to_csv(self.out_dir+'lagged_return/'+date+'/'+keywd+'/'+target+'/'+'period_'+period+'_'+'lag_'+lag+'_resample_'+resample_period+'.dat.gz', compression='gzip')
+                                        resampled.to_csv(self.out_dir+'lagged_return/mid/'+date+'/'+keywd+'/'+target+'/'+'period_'+period+'_'+'lag_'+lag+'_resample_'+resample_period+'.dat.gz', compression='gzip')
+                                        weight_resampled = weight_this_shifted.resample(resample_period).first()
+                                        weight_resampled.to_csv(self.out_dir+'lagged_return/weight/'+date+'/'+keywd+'/'+target+'/'+'period_'+period+'_'+'lag_'+lag+'_resample_'+resample_period+'.dat.gz', compression='gzip')
                                 level = 0
                                 symbol1 = corr.symbolDict[level][date][target[:2]]
-                                self.ticker_symbol(start_date=date, end_date=date, ticker=target, symbol=symbol1)
+                                self.ticker_symbol(start_date=date, end_date=date, ticker=target, symbol=symbol1) # 记录ticker_symbol
                                 corr_mat = this_shifted.corr()
+                                weight_corr_mat = weight_this_shifted.corr()
                                 corr_mat.fillna(-2, inplace=True)
+                                weight_corr_mat.fillna(-2, inplace=True)
                                 if not os.path.exists(
-                                        self.out_dir + '/corr/' + date + '/' + keywd + '/' + target + '/'):
-                                    os.makedirs(self.out_dir + '/corr/' + date + '/' + keywd + '/' + target + '/')
+                                        self.out_dir + '/corr/mid/' + date + '/' + keywd + '/' + target + '/'):
+                                    os.makedirs(self.out_dir + '/corr/mid/' + date + '/' + keywd + '/' + target + '/')
                                 corr_mat.to_csv(
-                                    self.out_dir + '/corr/' + date + '/' + keywd + '/' + target + '/' + period + '_' + lag + '.dat.gz', compression='gzip')
+                                    self.out_dir + '/corr/mid/' + date + '/' + keywd + '/' + target + '/' + period + '_' + lag + '.dat.gz', compression='gzip')
+                                if not os.path.exists(
+                                        self.out_dir + '/corr/weight/' + date + '/' + keywd + '/' + target + '/'):
+                                    os.makedirs(self.out_dir + '/corr/weight/' + date + '/' + keywd + '/' + target + '/')
+                                weight_corr_mat.to_csv(
+                                    self.out_dir + '/corr/weight/' + date + '/' + keywd + '/' + target + '/' + period + '_' + lag + '.dat.gz', compression='gzip')
                                 if lag == '500ms':
                                     lag_insert = '500s'
                                 else:
                                     lag_insert = lag
-                                for ticker2 in corr_mat.index.values:
+                                for ticker2 in corr_mat.index.values: # 把mid_price得到的corr写入数据库
                                     corr_value = corr_mat[target][ticker2]
                                     symbol2 = corr.symbolDict[level][date][ticker2[:2]]
                                     self.cursor.execute("""REPLACE INTO """+self.one_day_corr+"""(
@@ -167,6 +181,23 @@ class automation(object):
                                                             VALUES ('%s','%s','%s','%s','%s','%s','%d','%d','%d','%.8f')"""
                                                         % (date, date, target, symbol1, ticker2, symbol2, type,
                                                            int(period[:-1]), int(lag_insert[:-1]), corr_value))
+                                    self.conn.commit()
+                                for ticker2 in corr_mat.index.values: # 把weight_price得到的写入数据库
+                                    weight_corr_value = weight_corr_mat[target][ticker2]
+                                    symbol2 = corr.symbolDict[level][date][ticker2[:2]]
+                                    self.cursor.execute("""REPLACE INTO """+self.one_day_corr+"""(
+                                                            start_date,
+                                                            end_date,ticker1,
+                                                            symbol1,
+                                                            ticker2,
+                                                            symbol2,
+                                                            type,
+                                                            period,
+                                                            lag,
+                                                            corr)
+                                                            VALUES ('%s','%s','%s','%s','%s','%s','%d','%d','%d','%.8f')"""
+                                                        % (date, date, target, symbol1, ticker2, symbol2, (type+10),
+                                                           int(period[:-1]), int(lag_insert[:-1]), weight_corr_value))
                                     self.conn.commit()
             self.calculated.append(file)
 
@@ -250,7 +281,7 @@ class automation(object):
                 print 'done'
             print 'done'
 
-    def compare(self, period, lag):
+    def compare(self, period, lag):  # 比对lag和period,仅对lag<=period的进行计算以及period=0,lag=500ms这一特殊情形
         if lag[-2:] == 'ms':
             lag_ = int(lag[:-2])
         else:
@@ -263,18 +294,14 @@ class automation(object):
             flag = False
         return flag
 
-    # def shift(self, data, target, lag, corr):
-    #     align_base = corr.get_align_base(data)
-    #     res = corr.shift_align(data, target, lag, align_base=align_base)
-    #     return res
     def shift(self, data, target, lag):
         res = data.copy()
         if 'ms' in lag:
-            to_lag = float(int(lag[:-2])) / 1000
+            to_lag = float(int(lag[:-2])) * self.split / 1000
         elif lag[-1] == 's':
-            to_lag = float(int(lag[:-1])) / 1000
+            to_lag = float(int(lag[:-1])) * self.split
         else:  # time unit: minute(m)
-            to_lag = float(int(lag[:-1])) / 1000 * 60
+            to_lag = float(int(lag[:-1])) * self.split * 60
         to_lag = int(to_lag)
         tmp = res[target].values
         tmp = list(tmp[to_lag:])
@@ -285,7 +312,7 @@ class automation(object):
         res.fillna(method='ffill', inplace=True)
         return res
 
-    def sample(self, data, period, target, corr):
+    def sample(self, data, period, target, corr):  # 这里corr是一个instance
         res = corr.sampledata(data, period, target)
         res.dropna(how='all', axis=0, inplace=True)
         res.fillna(method='ffill', inplace=True)

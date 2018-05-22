@@ -37,9 +37,9 @@ class Pre_Research(object):
         if isinstance(lag, str):
             lag = int(lag)
         sql = 'select ticker1, ticker2, type,period, lag, abs(AVG(corr))*100 as abs_cor, AVG(corr)* 100 as co, ' \
-              'STD(corr)*100 as std from ' + table_name + ' where ticker1!=ticker2 and ticker1 = \"' + self.target + \
+              'STD(corr)*100 as std from ' + table_name + ' where ticker1!=ticker2 and ticker2 = \"' + self.target + \
               '\" and type = 0 and period = ' + str(period) + ' and lag = ' + str(lag) + \
-              ' group by ticker1,ticker2 order by abs_cor desc;'
+              ' group by ticker1,ticker2 order by abs_cor desc;'  # ticker2是被领跑的，所以target应该是ticker2
         # print 'sql query sentence is :   ', sql
         self.cursor.execute(sql)
         ans = self.cursor.fetchall()

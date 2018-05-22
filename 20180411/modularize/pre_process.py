@@ -2,11 +2,9 @@
 
 import pandas as pd
 import re
-import matplotlib.pylab as plt
-import seaborn as sns
 import os
-import gc
-import new_sample_lib
+import new_sample_lib  #用来求不同period下的rolling_return
+reload(new_sample_lib)
 import numpy as np
 
 
@@ -62,7 +60,7 @@ class pre_process(object):
         timerange2 = pd.date_range(day + ' 13:30', day + ' 15', freq=str(1000/self.split)+'ms')
         flag = map(lambda x: (x in timerange1) or (x in timerange2), temp.index.values)  # only keep data that belongs to time [09,11:30] and [13:30,15:00]
         temp = temp[flag]
-        return temp
+        return temp  # temp is  a dataframe
 
     # def load_multi_days(self, dayLst, period):    #读取多日数据，并存入到一个字典中，以对应日期为key
     #     '''load multi days raw_data and store in a dictionary, with date as key'''
@@ -77,34 +75,33 @@ class pre_process(object):
     def findMostInType(self, df):  #寻找主力合约 选取第二、第三通过每选出一次就把那一些从列表里去掉
         dic = df.groupby('ticker')['turnover'].max()
         lst = dic.index.values
-        lst = self.filterName(lst)
-        for time in range(self.level+1):
-            existed = []
-            length = {}
-            major_dic = {}
-            for name in lst:
+        lst = self.filterName(lst)  #筛除掉不需要的ticker、非期货
+        for time in range(self.level+1):  # 筛选出第一、第二、第三主力合约
+            length = {}  # 存储ticker:volu
+            major_dic = {}  # 储存ticker-symbol
+            for name in lst:  # 获取具有最大turnover的ticker
                 l = dic[name]
-                if name[:2] in existed:
+                if name[:2] in major_dic.keys():
                     if l > length[name[:2]]:
                         major_dic[name[:2]] = name
                         length[name[:2]] = l
                 else:
-                    existed.append(name[:2])
                     length[name[:2]] = l
                     major_dic[name[:2]] = name
-            for times in range(len(lst)):
-                for elem in lst:
-                    if elem in major_dic.values():
-                        lst.remove(elem)
+            if self.level > 0:
+                for times in range(len(lst)):  #从lst中剔除上一步中选出的lst中的相对主力合约，如果level>0，则从剔除后的lst中重选，达到获得第二、第三主力合约的目的
+                    for elem in lst:
+                        if elem in major_dic.values():
+                            lst.remove(elem)
         return major_dic
 
-    def trim_merge(self, raw_data, size_thres=1000): # 选出每个主力合约，然后时间规整、时间对齐,return a dic with target ticker as key
+    def trim_merge(self, raw_data, size_thres=1000):  # 选出每个主力合约，然后时间规整、时间对齐,return a dic with target ticker as key
+        # 用字典来存储不同ticker的df好像不够高效?
         major = self.findMostInType(raw_data)
         major_future = major.values()
         date = str(raw_data.index.values[0]).split('T')[0]
         date = (date.split('-'))[0]+(date.split('-'))[1]+(date.split('-'))[2]
-        # print 'date is ', date
-        self.recordSymbol(date, major, level=self.level) # record ticker-symbol pair
+        self.recordSymbol(date, major, level=self.level)  # record ticker-symbol pair
         data_dic = {}
         align_base = self.get_align_base(raw_data)
         for ticker in major_future:
@@ -118,18 +115,18 @@ class pre_process(object):
                 data_dic[ticker] = tmp
         return data_dic
 
-    def calc_all_ticker(self, data_dic, period, resample_periodlst, how='first', save_col=['ticker', 'bid_price', 'ask_price', 'mid_price', 'rolling_return', 'aggravated_return']):
+    def calc_all_ticker(self, data_dic, period, resample_periodlst, how='first', save_col=['ticker', 'bid_price', 'ask_price','bid_volume', 'ask_volume', 'mid_price', 'rolling_return', 'aggravated_return','weight_price','weight_rolling_return', 'weight_aggravated_return']):
         major_future = data_dic.keys()
         calculated_dic = {}
         date = str(data_dic[major_future[0]].index.values[0]).split('T')[0]
         date = (date.split('-'))[0]+(date.split('-'))[1]+(date.split('-'))[2]
-        calculated_dic['no_resample'] = {}
+        calculated_dic['resample_0s'] = {}
         for ticker in major_future:
             tmp = self.calcAll(data_dic[ticker], period)
             tmp = tmp[save_col]
-            calculated_dic['no_resample'][ticker] = tmp
+            calculated_dic['resample_0s'][ticker] = tmp # 计算未进行resample的
             for resample_period in resample_periodlst:
-                if 'ms' in resample_period and int(resample_period[:-2]) <= 1000/ self.split: # this means no need to resample as resample period is less than time gap
+                if 'ms' in resample_period and int(resample_period[:-2]) <= 1000 / self.split: # this means no need to resample as resample period is less than time gap
                     pass
                 else:
                     if resample_period not in calculated_dic.keys():
@@ -152,36 +149,46 @@ class pre_process(object):
         return calculated_dic
 
     def merge_return(self, calculated_dic, period, keywd): # 这个period参数实际上没有用于计算，只是用来作为保存数据时的路径及文件名
-        major_future = calculated_dic['no_resample'].keys()
-        date = str(calculated_dic['no_resample'][major_future[0]].index.values[0]).split('T')[0]
+        major_future = calculated_dic['resample_0s'].keys()
+        date = str(calculated_dic['resample_0s'][major_future[0]].index.values[0]).split('T')[0]
         date = (date.split('-'))[0]+(date.split('-'))[1]+(date.split('-'))[2]
         res_dic = {}
+        weight_res_dic = {}
         for key in calculated_dic.keys():
             res_dic[key] = pd.DataFrame()
+            weight_res_dic[key] = pd.DataFrame()
         if self.type == 0:
             keywd = 'rolling_return'
+            weight_keywd = 'weight_rolling_return'
             save_keywd = 'rolling'  # 为了和corr的保存路径保持一致
         else:
             keywd = 'aggravated_return'
+            weight_keywd = 'weight_aggravated_return'
             save_keywd = 'aggravated'
         for ticker in major_future:
             symbol = ticker[:2]+str(self.level)
             for key in calculated_dic.keys():
                 res_dic[key][symbol] = calculated_dic[key][ticker][keywd].values
+                weight_res_dic[key][symbol] = calculated_dic[key][ticker][weight_keywd].values
         for key in calculated_dic.keys():  # calculated.keys()
             index = calculated_dic[key][major_future[0]].index.values
             res_dic[key].index = index
+            weight_res_dic[key].index = index
         if self.save:
             for key in res_dic.keys():
                 tmp = res_dic[key]   # return dataframe
-                if key == 'no_resample':
-                    dir_keywd = 'no_resample'
+                weight_tmp = weight_res_dic[key]
+                if key == 'resample_0s':
+                    dir_keywd = 'resample_'+'0s'
                 else:
                     dir_keywd = 'resample_'+key
-                if not os.path.exists(self.out_dir+'/return/' + date + '/' + save_keywd+'/period_'+period+'/'):
-                    os.makedirs(self.out_dir+'/return/' + date + '/' + save_keywd+'/period_'+period+'/')
-                tmp.to_csv(self.out_dir+'/return/' + date + '/' + save_keywd + '/period_' + period +'/'+dir_keywd+'.dat.gz', compression='gzip')
-        return res_dic
+                if not os.path.exists(self.out_dir+'/return/mid/' + date + '/' + save_keywd+'/period_'+period+'/'):
+                    os.makedirs(self.out_dir+'/return/mid/' + date + '/' + save_keywd+'/period_'+period+'/')
+                tmp.to_csv(self.out_dir+'/return/mid/' + date + '/' + save_keywd + '/period_' + period +'/'+dir_keywd+'.dat.gz', compression='gzip')
+                if not os.path.exists(self.out_dir+'/return/weight/' + date + '/' + save_keywd+'/period_'+period+'/'):
+                    os.makedirs(self.out_dir+'/return/weight/' + date + '/' + save_keywd+'/period_'+period+'/')
+                weight_tmp.to_csv(self.out_dir+'/return/weight/' + date + '/' + save_keywd + '/period_' + period +'/'+dir_keywd+'.dat.gz', compression='gzip')
+        return res_dic, weight_res_dic
 
     def timeIndex(self, df, date):
         '''trim time into 500ms or 250ms and change it into timeseries and set as index'''
@@ -260,10 +267,10 @@ class pre_process(object):
         align_base.drop('helper', axis=1, inplace=True)
         return align_base
 
-    def align_drop(self, data, base):
+    def align_drop(self, data, base):  # 对齐后丢弃helper列
         '''align target data to base index and drop duplicates'''
         df = data.copy()
-        _, df = base.align(df, join='left', axis = 0)
+        _, df = base.align(df, join='left', axis=0)
         df = pd.DataFrame(df)
         df['helper'] = df.index
         df.drop_duplicates(subset = 'helper', inplace=True)
@@ -282,45 +289,63 @@ class pre_process(object):
 
     def midPrice(self, df):  # 计算mid_pricr,存在部分记录中bid_price或者ask_price出错的情形
         flag = (df.ask_price * df.bid_price) != 0
+        mid_price = []
+        ask_price, bid_price = df.ask_price.values, df.bid_price.values
         if flag.all():
-            df.loc[:, 'mid_price'] = (df.ask_price + df.bid_price) / 2
+            df.loc[:, 'mid_price'] = (df.ask_price + df.bid_price) / 2.0
         else:
-            bid_index, ask_index = 1, 3
-            mid_price = []
             for i in range(df.shape[0]):
-                if (df.iloc[i, bid_index] != 0) and (df.iloc[i, ask_index] != 0):
-                    mid_price.append((df.iloc[i, bid_index] + df.iloc[i, ask_index])/2)
-                elif df.iloc[i, bid_index] == 0:
-                    mid_price.append(df.iloc[i, ask_index])
-                elif df.iloc[i, bid_index] == 0:
-                    mid_price.append(df.iloc[i, bid_index])
+                if ask_price[i] != 0 and bid_price[i] != 0:
+                    mid_price.append((ask_price[i]+bid_price[i])/2.0)
+                elif ask_price[i] == 0 and bid_price[i] != 0:
+                    mid_price.append(bid_price[i])
+                elif ask_price[i] != 0 and bid_price[i] == 0:
+                    mid_price.append(ask_price[i])
                 else:
-                    mid_price.append(0)
+                    mid_price.append(np.nan)
             df.loc[:, 'mid_price'] = mid_price
-            df.mid_price.replace(0, method='ffill', inplace=True)
+            df.fillna(method='ffill', inplace=True)
+            df.fillna(method='bfill', inplace=True)
+        #
+        # if flag.all():
+        #     df.loc[:, 'mid_price'] = (df.ask_price + df.bid_price) / 2
+        # else:
+        #     bid_index, ask_index = 1, 3
+        #     mid_price = []
+        #     for i in range(df.shape[0]):
+        #         if (df.iloc[i, bid_index] != 0) and (df.iloc[i, ask_index] != 0):
+        #             mid_price.append((df.iloc[i, bid_index] + df.iloc[i, ask_index])/2)
+        #         elif df.iloc[i, bid_index] == 0:
+        #             mid_price.append(df.iloc[i, ask_index])
+        #         elif df.iloc[i, bid_index] == 0:
+        #             mid_price.append(df.iloc[i, bid_index])
+        #         else:
+        #             mid_price.append(0)
+        #     df.loc[:, 'mid_price'] = mid_price
+        #     df.mid_price.replace(0, method='ffill', inplace=True)
 
-    def weightPrice(self, df):
-        flag = (df.ask_price * df.bid_price) != 0
-        w_price=[]
-            ask_price, bid_price, ask_volu, bid_volu = df.ask_price.values, df.bid_price.values, df.ask_volume.values,df.bid_volumes
+    def weightPrice(self, df):  # 计算带权重的price，权重取值与ask_volu、bid_volu有关
+        flag = (df.ask_price * df.bid_price) != 0 # 用于筛选ask_price、bid_price都是非零值，任一值为零值则需要额外处理
+        w_price = []
+        ask_price, bid_price, ask_volu, bid_volu = df.ask_price.values, df.bid_price.values, df.ask_volume.values, df.bid_volume.values
         if flag.all():
             for i in range(df.shape[0]):
                 val = (bid_price[i] * ask_volu[i]+ask_price[i]*bid_volu[i]) / (ask_volu[i] + bid_volu[i])  # 没有处理两个volu都为0的特殊情况，有交易应该就不会两个都是0吧
                 w_price.append(val)
-            df.loc[:, 'w_price'] = w_price
+            df.loc[:, 'weight_price'] = w_price
         else:
             for i in range(df.shape[0]):
-                if bid_price[i] == 0 and ask_price[i] != 0:
+                if ask_price[i] != 0 and bid_price[i] != 0:
+                    w_price.append((ask_price[i] * bid_volu[i] + bid_price[i] * ask_volu[i]) / (ask_volu[i] + bid_volu[i]))
+                elif bid_price[i] == 0 and ask_price[i] != 0:
                     w_price.append(ask_price[i])
                 elif bid_price[i] != 0 and ask_price[i] == 0:
                     w_price.append(bid_price[i])
                 else:
                     w_price.append(np.nan)
-            df.loc[:, 'w_price'] = w_price
+            df.loc[:, 'weight_price'] = w_price
             df.fillna(method='ffill', inplace=True)
             df.fillna(method='bfill', inplace=True)
-
-
 
     def rollingRet(self, df, period):
         sample = new_sample_lib.sample(period=period, split=self.split)
@@ -330,18 +355,20 @@ class pre_process(object):
     def aggravatedRet(self, df):
         data = df.copy()
         data['aggravated_return'] = ((data['mid_price'] - data['mid_price'].values[0]) / data['mid_price'].values[0]).values
+        data['weight_aggravated_return'] = ((data['weight_price'] - data['weight_price'].values[0]) / data['weight_price'].values[0]).values
         return data
 
     def calcAll(self, df, period):
         self.midPrice(df)
+        self.weightPrice(df)
         df = self.rollingRet(df, period)
         df = self.aggravatedRet(df)
         return df
 
-    def filterName(self, lst):  # 判断是否为期权
+    def filterName(self, lst):  # 判断是否为期权,剔除债券
         '''judge whether is option or not'''
         ans = []
         for name in lst:
-            if not ('-P-' in name or '-C-' in name or 'SR' in name):
+            if not ('-P-' in name or '-C-' in name or 'SR' in name or 'TF' in name or 'IH' in name or 'IF' in name or 'IC' in name or 'T1' in name):
                 ans.append(name)
         return ans
